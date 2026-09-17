@@ -1,0 +1,61 @@
+from ultralytics import YOLO
+import cv2
+from collections import Counter
+
+def main():
+    model = YOLO(r"C:\Users\EmageVision\Documents\autodistill\runs\detect\train-4\weights\best.pt")
+
+    video_path = r"C:\Users\EmageVision\Documents\duck_classification\DuckVidNew\other_species_present1.mp4"
+
+    results = model.predict(
+        source=video_path,
+        conf=0.4,
+        save=False,
+        device=0,
+        stream=True,
+    )
+
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    out_path = r"C:\Users\EmageVision\Documents\autodistill\runs\detect\duck_output_5.mp4"
+    writer = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+
+    frame_idx = 0
+    count_tally = Counter()
+
+    for r in results:
+        count = len(r.boxes)
+        count_tally[count] += 1
+        frame_idx += 1
+
+        # thinner boxes, smaller labels, no confidence score clutter
+        annotated = r.plot(
+            line_width=1,       # thin box outline instead of the thick default
+            font_size=None,     # auto-scale font to image size
+            labels=True,        # keep the "duck" label
+            conf=False,         # hide the confidence number for a cleaner look
+        )
+
+        writer.write(annotated)
+
+        if frame_idx % 30 == 0:
+            print(f"Frame {frame_idx}: {count} ducks detected")
+
+    writer.release()
+
+    most_common_count, votes = count_tally.most_common(1)[0]
+
+    print("\n--- Duck count tally across all frames ---")
+    for cnt, votes_for_cnt in sorted(count_tally.items()):
+        print(f"Count {cnt}: appeared in {votes_for_cnt} frames")
+
+    print(f"\nFinal duck count (most frequent across {frame_idx} frames): {most_common_count}")
+    print(f"(That count appeared in {votes} frames)")
+    print(f"Output video saved to: {out_path}")
+
+if __name__ == "__main__":
+    main()

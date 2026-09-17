@@ -1,0 +1,76 @@
+Based on the three scripts, here's the full pipeline end to end.
+
+## Stage 1 — Dataset Prep (`prepare_dataset.py`)
+
+**Entry point:** `run_dataset_prep(session_id, video_path, output_dir, ...)`
+
+1. **Extract frames** (`_extract_all_frames`) — opens your source video with `cv2.VideoCapture`, reads every frame, and dumps each one as `frame_000001.jpg`, `frame_000002.jpg`, ... into `output_dir/frames/`. No frame skipping — every single frame is saved.
+
+2. **Auto-label with a zero-shot model** (`_autolabel_frames`) — this is where `autodistill` + `GroundingDINO` come in. You define two text prompts (`duck_prompt="duck"`, `other_prompt="not a duck"`), Grounding DINO looks at every extracted frame and draft-labels boxes for "duck" vs "other" based purely on those text prompts — no training needed yet, it's zero-shot. Output is a YOLO-format dataset (`images/`, `labels/`, `data.yaml`) written into `output_dir`, split into `train/` and `valid/`.
+
+3. **Confidence summary** — counts how many boxes were drawn total and how many were low-confidence (<0.5), so you know how much manual cleanup is needed.
+
+4. **Pipeline pauses here.** The function returns `awaiting_review` — it does **not** train. You're expected to open the dataset and manually fix/verify the draft labels (Grounding DINO's guesses) before moving to Stage 2. This is the human-in-the-loop step.
+
+**Output:** a `data.yaml` pointing at a labeled (draft, needs review) dataset.
+
+## Stage 2 — Training (`train.py`)
+
+**Entry point:** `run_training(training_id, data_path, results_path, backbone="yolo11n.pt", epochs=200, ...)`
+
+1. Loads the `data.yaml` from Stage 1 (after you've reviewed/fixed the labels).
+2. Initializes a YOLO model from a backbone checkpoint (e.g. `yolo11n.pt`).
+3. Registers a callback (`on_fit_epoch_end`) that reports progress — epoch number, loss/metrics, CPU/RAM/GPU usage — after every epoch.
+4. Runs `model.train(...)` for the configured epochs, with early stopping via `patience`.
+5. Saves the best checkpoint to `results_path/weights/best.pt` — **this is where `best2.pt` came from**, just renamed when you exported it.
+
+**Output:** a trained weights file (`best.pt` / `best2.pt`).
+
+## Stage 3 — Inference (`analyzer.py`, was `duck_analyzer.py`)
+
+**Entry point:**
+```python
+analyzer = DuckAnalyzer("config.yaml", expected_duck_count=18)
+result = analyzer.process_frame(frame)
+```
+
+This is the live/production side — completely separate from training. Per frame:
+
+1. **Loads `best2.pt`** via `YOLO(model_path)` and runs `model.track()` (BoT-SORT tracker) — not just detection, but persistent tracking so each duck keeps an ID as it moves.
+
+2. **Warmup / anchor lock** — for the first `warmup_frames`, it watches for a frame where the detected duck count exactly matches `expected_duck_count`. Once found, it "locks" — assigns each tracker-id a stable display number 1..N based on left-to-right, top-to-bottom position.
+
+3. **Every frame after lock:**
+   - Matches currently-tracked ducks back to their display IDs (via the tracker ID mapping, with appearance+position re-binding if a tracker ID changes).
+   - Fires event thumbnails once each: `confirmed` (count matches expected), `added` (new duck beyond the anchor count), `missing_alert` (a duck's tracker ID has been gone ≥ `missing_patience` frames), `other_present` (non-duck species detected).
+   - Draws boxes on the frame (green = duck, red = missing/other), and a NORMAL/ANOMALY banner.
+
+4. **Returns a result dict** per frame: `status`, `detected_duck_count`, `reasons` (why it's anomalous, if it is), `thumbnails` (base64 JPEGs for any events), and the `annotated_frame`.
+
+**Output:** real-time per-frame status your backend/frontend consumes — this is what your colleague's server calls.
+
+## How the three stages connect
+
+```
+video.mp4
+   │
+   ▼
+prepare_dataset.py  →  draft-labeled dataset (data.yaml)
+   │                        │
+   │                   [YOU manually review/fix labels]
+   │                        │
+   ▼                        ▼
+                     train.py  →  best.pt (→ renamed best2.pt)
+                                        │
+                                        ▼
+                              config.yaml (model_path: best2.pt)
+                                        │
+                                        ▼
+                              analyzer.py → DuckAnalyzer
+                                        │
+                                        ▼
+                              backend calls process_frame(frame)
+                              per incoming video frame, live
+```
+
+Stages 1 and 2 are things **you** run once (or occasionally, to retrain). Stage 3 is what ships in the wheel and runs continuously on your colleague's server, using whatever `best2.pt` came out of Stage 2.

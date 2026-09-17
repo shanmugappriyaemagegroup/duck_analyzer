@@ -1,0 +1,55 @@
+# ------------------ duck_analyzer config ------------------
+# All thresholds and paths live here. Edit these, not the code.
+
+# paths
+model_path: "C:/Users/EmageVision/Documents/autodistill/runs/detect/train-6/weights/best.pt"
+# hand / pose model (skips a frame when a hand is present)
+# hand detection
+hand_backend: mediapipe     # default; use "yolo" to fall back to a pose model
+hand_conf: 0.6              # MediaPipe min_detection_confidence
+hand_track_conf: 0.5
+hand_hold_frames: 2 
+# --- local saving (for YOUR reference/debugging) ---
+save_local: true
+thumbnail_dir: "C:/Users/EmageVision/Documents/duck_classification/thumbnails"
+annotated_dir: "C:/Users/EmageVision/Documents/duck_classification/annotated_images"
+
+# expected scene (expected_duck_count supplied by frontend per request)
+expected_duck_count: null
+duck_class_id: 0
+other_class_id: 1
+
+# detection
+conf: 0.25
+device: 0
+use_half: true       # FP16 on GPU (~2x faster). Set false to disable.
+gpu_benchmark: true  # one-time TFLOP/s print at startup (optional; set false later)
+
+# anchor
+warmup_frames: 10
+warmup_require_exact: true
+warmup_max_frames: 300
+
+# matching / ID stability
+match_threshold: 0.20
+pos_weight: 0.6
+app_weight: 0.4
+new_id_patience: 20
+other_id_patience: 8
+provisional_match_dist: 0.10
+row_tolerance_frac: 0.06
+
+# shake stabilization
+anomaly_smoothing_frames: 15
+
+# tracking (for MOVING ducks)
+tracker: "botsort.yaml"
+# frames a duck must be gone before a missing_alert thumbnail fires (once per episode)
+missing_patience: 3
+strict_count: true
+rebind_pos_weight: 0.5
+rebind_app_weight: 0.5
+rebind_threshold: 0.2     # lower = easier to reclaim a slot (fewer false MISSING)
+
+# output
+jpeg_quality: 80

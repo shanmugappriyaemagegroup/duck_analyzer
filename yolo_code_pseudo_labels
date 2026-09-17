@@ -1,0 +1,125 @@
+import os
+import shutil
+from ultralytics import YOLO
+
+# =========================
+# SETTINGS
+# =========================
+
+# folder that ALREADY contains your images
+input_images_dir = r"C:\Users\EmageVision\Documents\duck_classification\extracted frames"
+
+model_path = r"C:\Users\EmageVision\Documents\autodistill\runs\detect\train-12\weights\best.pt"
+
+# where the YOLO dataset gets written (images/ + labels/ subfolders)
+output_dir = r"C:\Users\EmageVision\Documents\duck_classification\auto_annotated"
+
+conf_thresh = 0.5          # detection confidence for the draft labels
+copy_images = True         # True = copy images into output/images ; False = leave them in place
+
+IMG_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+
+# =========================
+# CREATE OUTPUT DIRS
+# =========================
+
+out_images_dir = os.path.join(output_dir, "images")
+out_labels_dir = os.path.join(output_dir, "labels")
+os.makedirs(out_images_dir, exist_ok=True)
+os.makedirs(out_labels_dir, exist_ok=True)
+
+# =========================
+# LOAD MODEL
+# =========================
+
+model = YOLO(model_path)
+
+# =========================
+# COLLECT IMAGES
+# =========================
+
+files = [f for f in os.listdir(input_images_dir)
+         if f.lower().endswith(IMG_EXTS)]
+files.sort()
+
+if not files:
+    print(f"No images found in: {input_images_dir}")
+    raise SystemExit
+
+print(f"Found {len(files)} images. Annotating...\n")
+
+# =========================
+# ANNOTATE EACH IMAGE
+# =========================
+
+annotated = 0
+total_boxes = 0
+
+for fname in files:
+
+    src_path = os.path.join(input_images_dir, fname)
+    stem = os.path.splitext(fname)[0]        # filename without extension
+    label_path = os.path.join(out_labels_dir, stem + ".txt")
+
+    # -------------------------
+    # RUN YOLO
+    # -------------------------
+
+    results = model.predict(source=src_path, conf=conf_thresh, verbose=False)
+    result = results[0]
+
+    # -------------------------
+    # WRITE YOLO LABEL (.txt)
+    # one line per box: class_id x_center y_center width height  (all normalized)
+    # -------------------------
+
+    n_boxes = 0
+    with open(label_path, "w") as f:
+        if result.boxes is not None:
+            for box in result.boxes:
+                class_id = int(box.cls[0])
+                x_center, y_center, width, height = box.xywhn[0].tolist()
+                f.write(
+                    f"{class_id} "
+                    f"{x_center:.6f} "
+                    f"{y_center:.6f} "
+                    f"{width:.6f} "
+                    f"{height:.6f}\n"
+                )
+                n_boxes += 1
+
+    # -------------------------
+    # PLACE THE IMAGE ALONGSIDE ITS LABEL
+    # -------------------------
+
+    if copy_images:
+        shutil.copy2(src_path, os.path.join(out_images_dir, fname))
+
+    annotated += 1
+    total_boxes += n_boxes
+    print(f"[{annotated}/{len(files)}] {fname} -> {n_boxes} box(es)")
+
+# =========================
+# OPTIONAL: data.yaml for training / labeling tools
+# class names come from the model itself (model.names)
+# =========================
+
+names = model.names  # dict {id: name}
+yaml_path = os.path.join(output_dir, "data.yaml")
+with open(yaml_path, "w") as f:
+    f.write(f"path: {output_dir}\n")
+    f.write("train: images\n")
+    f.write("val: images\n")
+    f.write(f"nc: {len(names)}\n")
+    f.write("names:\n")
+    for k in sorted(names):
+        f.write(f"  {k}: {names[k]}\n")
+
+print("\nDone!")
+print(f"Images annotated : {annotated}")
+print(f"Total boxes      : {total_boxes}")
+print(f"Images  -> {out_images_dir}" if copy_images
+      else f"Images  -> left in {input_images_dir}")
+print(f"Labels  -> {out_labels_dir}")
+print(f"data.yaml -> {yaml_path}")
+print(f"Class names from model: {names}")

@@ -1,0 +1,33 @@
+# Python / environment
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Data folders
+/images/
+/labels/
+/labels_bbox/
+/test/
+/extracted_frames/
+/dataset/
+
+# Ignore all runs EXCEPT finetune_plus200 (weights)
+/runs/*
+!/runs/detect/
+/runs/detect/*
+!/runs/detect/finetune_plus200/
+
+# Upstream autodistill leftovers
+/autodistill/
+/automation/
+/docs/
+/.github/
+# Large outputs (video and run database)
+*.mp4
+*.avi
+*.mov
+*.db
+*.db-journal

@@ -1,0 +1,5 @@
+Why the retraining didn't remove the cap
+Not enough negative frames. 50 or so bottle frames among 1,400 images is a small signal. Use 150–200, with the bottle in different positions and angles.
+freeze=10. With the backbone frozen, the model can barely change what it considers "duck-like". Retrain without freeze, from finetune_plus200\weights\best.pt, for about 40 epochs.
+Check the label files. If the frames were auto-labelled with autodistill, open a few .txt files and make sure there is no duck line with coordinates around the cap. One stray label cancels out the negative example.
+Tray class consistency. Your data.yaml still has tray as class 2. If older images have tray boxes and the new ones don't, the labels contradict each other. Since you don't need the tray, you can remove all class-2 lines from every label file and set nc: 2 with only duck and other_toys. That requires a full training run of about 100 epochs rather than a fine-tune, because the class count changes.

@@ -1,0 +1,34 @@
+grounding dino v2
+resnet model
+ggooglr siglip
+spacial features within a ref id in a vector databadse 
+fiss
+  
+
+
+Transformer trackers with attention (what you meant by "attention layer tracking"). The modern trackers — TransTrack, MOTR, TrackFormer, and especially ByteTrack / OC-SORT / Deep OC-SORT — use attention or better motion-appearance association than the BoT-SORT you're running now. Of these, Deep OC-SORT and BoT-SORT-ReID are the practical picks: they fuse a ReID embedding with motion inside the tracker's association step, which is exactly the "fusion" you're describing. The key insight: this fuses appearance + motion at the tracker level, so you wouldn't need your custom rebind logic at all — the tracker itself would keep IDs stable. Switching your tracker: "botsort.yaml" to a ReID-enabled config is low effort and might genuinely help.
+
+3. Full fusion models (attention over appearance + motion + position jointly). This is TransformerTrack / MOTR territory — end-to-end transformers that attend over all cues. Honestly: overkill for 18 static ducks on a tray. These shine on crowded pedestrian scenes with dozens of fast-moving targets and complex occlusion. Your scene is 18 mostly-stationary objects. The engineering and compute cost is high and the marginal benefit over option 1 or 2 is small. I'd advise against it for this.
+
+
+
+https://github.com/facebookresearch/sam2.git
+
+
+
+1. Transformer-based end-to-end trackers (identity is learned, not just matched)
+MOTR / MOTRv2 / MeMOT
+These don't do detect-then-match like SORT/DeepSORT — they use track queries that persist across frames as part of the model itself. Each query "owns" an identity from the frame it first appears in, and the transformer decoder updates that same query frame-to-frame.
+Much more robust to occlusion/clustering because identity isn't re-derived from IoU/appearance matching every frame — it's carried internally as a learned state.
+Downside: heavier to train, needs video-level annotation (track IDs across frames, not just per-frame boxes) — more setup than your current per-frame annotated model.
+TransTrack / TrackFormer
+Similar query-propagation idea, somewhat lighter than MOTR. Worth trying if MOTR feels heavy.
+
+
+
+The one thing you must know before trusting this to fix swaps: the embedder only votes in the rebind path (lost-and-reacquired ducks). A silent in-place ID swap — where ByteTrack keeps the same tracker-id but puts it on the wrong duck — takes the direct-hit path and is accepted with no appearance check, so the embedder never sees it. My test forced exactly that swap and the colours were ignored, as designed. For similar-coloured ducks, that silent swap is often the main failure mode.
+
+If catching those swaps is the real goal, I'd add the ~10-line verification in the direct-hit branch (demote a known tid to pending when its crop's embedding disagrees with its slot). That touches your matching logic, so it's your call — say the word and I'll add it plus a swap_verify_min_app config key, and test it against the same swap scenario to confirm it corrects.
+
+ 
+ 
