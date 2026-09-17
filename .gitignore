@@ -4,7 +4,8 @@ __pycache__/
 *.pyc
 *.egg-info/
 build/
-dist/
+dist/*
+!/duck_pkg/dist/duck_analyzer-1.0.19-py3-none-any.whl
 
 # Data folders
 /images/
